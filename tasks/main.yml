@@ -17,7 +17,7 @@
     - name: Add Docker GPG key if not present
       become: yes
       get_url:
-        url: https://download.docker.com/linux/{{ ansible_distribution | lower }}/gpg
+        url: https://download.docker.com/linux/{{ ansible_facts['distribution'] | lower }}/gpg
         dest: /etc/apt/keyrings/docker.asc
         mode: 0644
       when: not docker_key.stat.exists | default(false)
@@ -25,7 +25,7 @@
     - name: Ensure Docker CE Repository
       apt_repository:
         filename: 'docker'
-        repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/{{ ansible_distribution | lower }} {{ ansible_distribution_release }} stable"
+        repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/{{ ansible_facts['distribution'] | lower }} {{ ansible_facts['distribution_release'] }} stable"
         state: present
         update_cache: yes
 
@@ -78,7 +78,7 @@
       file:
         path: /etc/systemd/system/docker.service.d
         state: directory
-      when: ansible_service_mgr == "systemd"
+      when: ansible_facts['service_mgr'] == "systemd"
 
     - name: Allow docker listen on TCP
       copy:
@@ -90,7 +90,7 @@
       notify:
         - Reload Systemd
         - Restart Docker
-      when: ansible_service_mgr == "systemd" and docker_listen_addr is defined
+      when: ansible_facts['service_mgr'] == "systemd" and docker_listen_addr is defined
 
     - name: Allow docker listen on TCP
       lineinfile:
@@ -98,7 +98,7 @@
         regexp: "^DOCKER_OPTS="
         line: "DOCKER_OPTS='-H unix:///var/run/docker.sock -H tcp://{{ docker_listen_addr }}'"
       notify: Restart Docker
-      when: ansible_service_mgr != "systemd" and docker_listen_addr is defined
+      when: ansible_facts['service_mgr'] != "systemd" and docker_listen_addr is defined
   tags: docker_tcp
 
 - meta: flush_handlers
