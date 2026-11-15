@@ -28,6 +28,14 @@
         repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/{{ ansible_facts['distribution'] | lower }} {{ ansible_facts['distribution_release'] }} stable"
         state: present
         update_cache: yes
+      register: docker_apt_repository
+
+    - name: Explain deferred Docker package checks
+      debug:
+        msg: >-
+          The Docker repository would change. Package installation checks are deferred
+          until the repository and its package cache have been updated by a normal run.
+      when: ansible_check_mode and docker_apt_repository.changed
 
     - name: Ensure Docker CE is installed
       apt:
@@ -36,6 +44,7 @@
         update_cache: yes
         cache_valid_time: 86400  # Cache valid for 1 day
         force_apt_get: yes
+      when: not ansible_check_mode or not docker_apt_repository.changed
 
     - name: Ensure specific Docker CE version installed
       apt:
@@ -44,7 +53,9 @@
         update_cache: yes
         cache_valid_time: 86400  # Cache valid for 1 day
         force_apt_get: yes
-      when: docker_version is defined
+      when:
+        - docker_version is defined
+        - not ansible_check_mode or not docker_apt_repository.changed
 
     - name: Adding users to docker group
       user:
