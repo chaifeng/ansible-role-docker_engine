@@ -1,0 +1,97 @@
+- name: Ensure docker dependencies
+  ansible.builtin.apt:
+    name:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - software-properties-common
+      - python3-debian
+    state: present
+
+- name: Check the Python Debian library
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_facts['python']['executable'] }}"
+      - -c
+      - "import importlib.util; raise SystemExit(importlib.util.find_spec('debian') is None)"
+  check_mode: no
+  changed_when: false
+  failed_when: docker_repository_python_debian.rc not in [0, 1]
+  register: docker_repository_python_debian
+
+- name: Explain deferred Docker repository setup
+  ansible.builtin.debug:
+    msg: >-
+      python3-debian would be installed. Docker repository configuration is deferred
+      until that dependency is available after a normal run.
+  when: ansible_check_mode and docker_repository_python_debian.rc != 0
+
+- name: Configure the Docker APT repository
+  when: not ansible_check_mode or docker_repository_python_debian.rc == 0
+  block:
+    - name: Ensure the Docker GPG keyring directory exists
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
+      register: docker_repository_keyring
+
+    - name: Check if Docker GPG key exists
+      ansible.builtin.stat:
+        path: /etc/apt/keyrings/docker.asc
+      register: docker_key
+
+    - name: Add Docker GPG key if not present
+      ansible.builtin.get_url:
+        url: "https://download.docker.com/linux/{{ ansible_facts['distribution'] | lower }}/gpg"
+        dest: /etc/apt/keyrings/docker.asc
+        mode: '0644'
+      when:
+        - not (docker_key.stat.exists | default(false))
+        - not ansible_check_mode or not docker_repository_keyring.changed
+      register: docker_repository_key
+
+    - name: Read the APT architecture
+      ansible.builtin.command: dpkg --print-architecture
+      check_mode: no
+      changed_when: false
+      register: docker_repository_architecture
+
+    - name: Ensure Docker CE repository in deb822 format
+      ansible.builtin.deb822_repository:
+        name: docker
+        types:
+          - deb
+        uris:
+          - "https://download.docker.com/linux/{{ ansible_facts['distribution'] | lower }}"
+        suites:
+          - "{{ ansible_facts['distribution_release'] }}"
+        components:
+          - stable
+        architectures:
+          - "{{ docker_repository_architecture.stdout }}"
+        signed_by: /etc/apt/keyrings/docker.asc
+        mode: '0644'
+        state: present
+      register: docker_repository_source
+
+    - name: Remove the legacy Docker repository file
+      ansible.builtin.file:
+        path: /etc/apt/sources.list.d/docker.list
+        state: absent
+      register: docker_repository_legacy
+
+- name: Record Docker repository changes
+  ansible.builtin.set_fact:
+    docker_apt_repository:
+      changed: >-
+        {{ (ansible_check_mode and docker_repository_python_debian.rc != 0)
+           or (docker_repository_keyring.changed | default(false))
+           or (docker_repository_key.changed | default(false))
+           or (docker_repository_source.changed | default(false))
+           or (docker_repository_legacy.changed | default(false)) }}
+
+- name: Refresh the package cache after Docker repository changes
+  ansible.builtin.apt:
+    update_cache: yes
+  when: not ansible_check_mode and docker_apt_repository.changed

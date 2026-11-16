@@ -1,39 +1,11 @@
 - block:
-    - name: Ensure docker dependencies
-      apt:
-        name: apt-transport-https,ca-certificates,curl,software-properties-common
-        state: present
-
-    - name: Ensure the Docker GPG keyring directory exists
-      ansible.builtin.file:
-        path: /etc/apt/keyrings
-        state: directory
-        mode: '0755'
-    - name: Check if Docker GPG key exists
-      stat:
-        path: /etc/apt/keyrings/docker.asc
-      register: docker_key
-
-    - name: Add Docker GPG key if not present
-      become: yes
-      get_url:
-        url: https://download.docker.com/linux/{{ ansible_facts['distribution'] | lower }}/gpg
-        dest: /etc/apt/keyrings/docker.asc
-        mode: 0644
-      when: not docker_key.stat.exists | default(false)
-
-    - name: Ensure Docker CE Repository
-      apt_repository:
-        filename: 'docker'
-        repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/{{ ansible_facts['distribution'] | lower }} {{ ansible_facts['distribution_release'] }} stable"
-        state: present
-        update_cache: yes
-      register: docker_apt_repository
+    - ansible.builtin.import_tasks: repository.yml
+      tags: docker_repository
 
     - name: Explain deferred Docker package checks
       debug:
         msg: >-
-          The Docker repository would change. Package installation checks are deferred
+          The Docker repository setup would change. Package installation checks are deferred
           until the repository and its package cache have been updated by a normal run.
       when: ansible_check_mode and docker_apt_repository.changed
 
